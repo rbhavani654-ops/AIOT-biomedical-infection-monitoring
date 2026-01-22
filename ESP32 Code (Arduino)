@@ -1,0 +1,95 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// ---------- Wi-Fi & Server ----------
+const char* ssid     = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// change to your laptop IP running server.py
+String serverUrl = "http://192.168.0.100:5000/api/v1/data";
+
+// ---------- Sensor Pins ----------
+const int TEMP_PIN = 34;            // LM35 connected to GPIO34 (ADC)
+
+// ---------- Timing ----------
+unsigned long lastSendTime = 0;
+const unsigned long sendInterval = 10000; // 10 seconds
+
+void setup() {
+  Serial.begin(115200);
+
+  // Wi-Fi connect
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  // If needed, add sensor init (MAX30102 etc.)
+}
+
+void loop() {
+  unsigned long now = millis();
+  if (now - lastSendTime > sendInterval) {
+    lastSendTime = now;
+
+    float temperature = readTemperature();
+    float heartRate   = readHeartRate();
+    float spo2        = readSpO2();
+
+    Serial.print("Temp: "); Serial.print(temperature);
+    Serial.print(" °C, HR: "); Serial.print(heartRate);
+    Serial.print(" bpm, SpO2: "); Serial.println(spo2);
+
+    sendDataToServer(temperature, heartRate, spo2);
+  }
+}
+
+// ---------- Sensor Functions (basic) ----------
+float readTemperature() {
+  int raw = analogRead(TEMP_PIN);          // 0–4095
+  float voltage = (raw / 4095.0) * 3.3;    // ESP32 ADC 0–3.3V
+  float tempC   = voltage * 100.0;         // LM35 approx 10mV/°C
+  return tempC;
+}
+
+// TODO: replace with real HR/SpO2 sensor code
+float readHeartRate() {
+  // dummy: random around 80
+  return 75.0 + (rand() % 20 - 10); // 65–85 bpm
+}
+
+float readSpO2() {
+  // dummy: random around 98
+  return 97.0 + (rand() % 4 - 2);   // 95–99 %
+}
+
+// ---------- HTTP Send ----------
+void sendDataToServer(float temp, float hr, float spo2) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/json");
+
+    String payload = "{";
+    payload += "\"patient_id\": \"P001\",";
+    payload += "\"temperature\": " + String(temp, 2) + ",";
+    payload += "\"heart_rate\": " + String(hr, 2) + ",";
+    payload += "\"spo2\": " + String(spo2, 2);
+    payload += "}";
+
+    int httpResponseCode = http.POST(payload);
+
+    Serial.print("HTTP Response: ");
+    Serial.println(httpResponseCode);
+
+    http.end();
+  } else {
+    Serial.println("WiFi not connected");
+  }
+}
